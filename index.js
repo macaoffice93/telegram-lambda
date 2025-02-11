@@ -11,8 +11,16 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 // ✅ Initialize AWS Lambda Client
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION });
 
+// ✅ Function to generate a unique subdomain
+const generateUniqueSubdomain = () => {
+    const timestamp = Date.now().toString(36); // Base36 timestamp
+    const randomStr = Math.random().toString(36).substring(2, 8); // Random string
+    return `lambda-${timestamp}-${randomStr}`;
+};
+
 // ✅ Function to create a new Lambda with Function URL
-const createLambda = async (subdomain, chatId) => {
+const createLambda = async (chatId) => {
+    const subdomain = generateUniqueSubdomain();
     const functionName = `${subdomain}-function`;
 
     try {
@@ -48,24 +56,18 @@ const createLambda = async (subdomain, chatId) => {
     }
 };
 
-// ✅ Handle Telegram Command: `/newlambda subdomain`
-bot.onText(/\/newlambda (.+)/, async (msg, match) => {
+// ✅ Handle Telegram Command: `/newlambda`
+bot.onText(/\/newlambda/, async (msg) => {
     const chatId = msg.chat.id;
-    const subdomain = match[1]?.trim();
 
-    if (!subdomain) {
-        bot.sendMessage(chatId, "❌ Usage: `/newlambda <subdomain>`");
-        return;
-    }
-
-    bot.sendMessage(chatId, `⏳ Creating Lambda for subdomain: ${subdomain}...`);
-    await createLambda(subdomain, chatId);
+    bot.sendMessage(chatId, `⏳ Generating a unique Lambda function...`);
+    await createLambda(chatId);
 });
 
 // ✅ General Message Handler (Confirms Polling Works)
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "✅ I'm alive! Send `/newlambda <subdomain>` to create a Lambda function.");
+    bot.sendMessage(chatId, "✅ I'm alive! Send `/newlambda` to create a unique Lambda function.");
 });
 
 // ✅ Start the bot and log errors
