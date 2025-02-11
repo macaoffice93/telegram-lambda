@@ -44,14 +44,14 @@ const createLambda = async (subdomain, chatId) => {
         return functionUrl;
     } catch (error) {
         console.error("❌ Error creating Lambda function:", error);
-        bot.sendMessage(chatId, "❌ Error creating Lambda function. Check logs.");
+        bot.sendMessage(chatId, `❌ Error creating Lambda function. Check logs. Error: ${error.message}`);
     }
 };
 
 // ✅ Handle Telegram Command: `/newlambda subdomain`
 bot.onText(/\/newlambda (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
-    const subdomain = match[1].trim(); // Extract subdomain from command
+    const subdomain = match[1]?.trim();
 
     if (!subdomain) {
         bot.sendMessage(chatId, "❌ Usage: `/newlambda <subdomain>`");
@@ -59,10 +59,18 @@ bot.onText(/\/newlambda (.+)/, async (msg, match) => {
     }
 
     bot.sendMessage(chatId, `⏳ Creating Lambda for subdomain: ${subdomain}...`);
-    createLambda(subdomain, chatId);
+    await createLambda(subdomain, chatId);
 });
 
-// ✅ Start the bot
-bot.on("polling_error", console.log);
+// ✅ General Message Handler (Confirms Polling Works)
+bot.on("message", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "✅ I'm alive! Send `/newlambda <subdomain>` to create a Lambda function.");
+});
+
+// ✅ Start the bot and log errors
+bot.on("polling_error", (error) => {
+    console.error("🚨 Polling Error:", error);
+});
+
 console.log("🤖 Telegram bot is running...");
-r
