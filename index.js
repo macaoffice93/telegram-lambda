@@ -1,10 +1,14 @@
 import { LambdaClient, CreateFunctionCommand, CreateFunctionUrlConfigCommand, AddPermissionCommand } from "@aws-sdk/client-lambda";
+import fs from "fs";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const lambdaClient = new LambdaClient({ region: process.env.AWS_REGION });
 
 const createLambda = async (chatId) => {
     const functionName = `lambda-${Date.now().toString(36)}`;
-    
+
     try {
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
@@ -35,7 +39,7 @@ const createLambda = async (chatId) => {
             StatementId: "FunctionURLPublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            FunctionUrlAuthType: "NONE",
+            SourceArn: `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:${functionName}`
         });
 
         await lambdaClient.send(addPermission);
