@@ -49,17 +49,17 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add Public Access Permission (FIXED)
+        // Step 3: Add Public Access Permission (AWS Approved Version)
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
             StatementId: "FunctionURLPublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
             Condition: {
-                StringEquals: {
+                StringEqualsIfExists: {
                     "lambda:FunctionUrlAuthType": "NONE"
                 }
-            },
+            }
         });
 
         await lambdaClient.send(addPermission);
