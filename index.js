@@ -63,19 +63,14 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add a Resource-Based Policy for Public Access (FIXED ✅)
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
-            StatementId: "AllowPublicInvoke",
+            StatementId: "FunctionURLPublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            Condition: {
-                StringEquals: {
-                    "lambda:FunctionUrlAuthType": "NONE"
-                }
-            }
+            FunctionUrlAuthType: "NONE"  // ✅ FIXED: This is the correct parameter
         });
-
+        
         await lambdaClient.send(addPermission);
 
         // ✅ Step 4: Add an Inline Policy to IAM Role to Ensure Access
