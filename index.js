@@ -43,17 +43,27 @@ const createLambda = async (chatId) => {
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
 
         if (!process.env.AWS_ROLE_ARN) {
-            bot.sendMessage(chatId, "❌ Error: AWS_ROLE_ARN is missing. Please set it in your .env file.");
+            console.error("❌ ERROR: AWS_ROLE_ARN is missing. Set it in .env and restart the bot.");
+            bot.sendMessage(chatId, "❌ ERROR: AWS_ROLE_ARN is missing. Please set it in the .env file.");
+            return;
+        }
+        
+        // Check if the Lambda function ZIP file exists
+        if (!fs.existsSync("./index.mjs.zip")) {
+            console.error("❌ ERROR: Lambda ZIP file not found.");
+            bot.sendMessage(chatId, "❌ ERROR: Lambda ZIP file not found. Ensure 'index.mjs.zip' exists in the bot directory.");
             return;
         }
         
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
             Runtime: "nodejs18.x",
-            Role: process.env.AWS_ROLE_ARN,  // ✅ FIXED: Ensuring this exists before using it
+            Role: process.env.AWS_ROLE_ARN.trim(),  // ✅ Trim whitespace to prevent errors
             Handler: "index.handler",
-            Code: { ZipFile: zipFile }
-        });        
+            Code: { ZipFile: fs.readFileSync("./index.mjs.zip") },  // ✅ Ensure it loads properly
+            Timeout: 10,  // ✅ Ensure a timeout is set (AWS requires this)
+            MemorySize: 128
+        });            
 
         await lambdaClient.send(createFunction);
         bot.sendMessage(chatId, `✅ Lambda function '${functionName}' created successfully.`);
