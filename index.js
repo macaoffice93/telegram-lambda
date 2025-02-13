@@ -42,14 +42,18 @@ const createLambda = async (chatId) => {
 
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
 
-        // Step 1: Create Lambda Function
+        if (!process.env.AWS_ROLE_ARN) {
+            bot.sendMessage(chatId, "❌ Error: AWS_ROLE_ARN is missing. Please set it in your .env file.");
+            return;
+        }
+        
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
             Runtime: "nodejs18.x",
-            Role: process.env.AWS_ROLE_ARN,
+            Role: process.env.AWS_ROLE_ARN,  // ✅ FIXED: Ensuring this exists before using it
             Handler: "index.handler",
             Code: { ZipFile: zipFile }
-        });
+        });        
 
         await lambdaClient.send(createFunction);
         bot.sendMessage(chatId, `✅ Lambda function '${functionName}' created successfully.`);
