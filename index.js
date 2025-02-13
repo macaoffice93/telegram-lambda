@@ -19,7 +19,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 console.log("🤖 Telegram bot is running...");
 
-// ✅ Function to create a new Lambda with Function URL
+// ✅ Function to create a new Lambda with a publicly accessible Function URL
 const createLambda = async (chatId) => {
     const functionName = `lambda-${Date.now().toString(36)}`;
 
@@ -49,13 +49,17 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add Public Access Permission
+        // Step 3: Add Public Access Permission (FIXED)
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
             StatementId: "FunctionURLPublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            SourceArn: `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:${functionName}`
+            Condition: {
+                StringEquals: {
+                    "lambda:FunctionUrlAuthType": "NONE"
+                }
+            },
         });
 
         await lambdaClient.send(addPermission);
