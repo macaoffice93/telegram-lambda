@@ -1,5 +1,10 @@
 import TelegramBot from "node-telegram-bot-api";
-import { LambdaClient, CreateFunctionCommand, CreateFunctionUrlConfigCommand, AddPermissionCommand } from "@aws-sdk/client-lambda";
+import {
+    LambdaClient,
+    CreateFunctionCommand,
+    CreateFunctionUrlConfigCommand,
+    AddPermissionCommand
+} from "@aws-sdk/client-lambda";
 import fs from "fs";
 import dotenv from "dotenv";
 
@@ -49,20 +54,18 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add Public Access Permission (AWS Approved Version)
+        // Step 3: Add Public Access Permission via Resource-Based Policy (FIXED ✅)
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
-            StatementId: "FunctionURLPublicAccess",
+            StatementId: "PublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            Condition: {
-                StringEqualsIfExists: {
-                    "lambda:FunctionUrlAuthType": "NONE"
-                }
-            }
+            FunctionUrlAuthType: "NONE"
         });
 
         await lambdaClient.send(addPermission);
+
+        // ✅ Send the Function URL back to the Telegram chat
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
         return functionUrl;
     } catch (error) {
