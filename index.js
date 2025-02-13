@@ -54,6 +54,14 @@ const createLambda = async (chatId) => {
             bot.sendMessage(chatId, "❌ ERROR: Lambda ZIP file not found. Ensure 'index.mjs.zip' exists in the bot directory.");
             return;
         }
+        console.log("🚀 Lambda Function Parameters:", {
+            FunctionName: functionName,
+            Runtime: "nodejs18.x",
+            Role: process.env.AWS_ROLE_ARN,
+            Handler: "index.handler",
+            Timeout: 10,
+            MemorySize: 128,
+        });
         
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
