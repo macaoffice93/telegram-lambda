@@ -5,22 +5,13 @@ import {
     CreateFunctionUrlConfigCommand,
     AddPermissionCommand
 } from "@aws-sdk/client-lambda";
-import { IAMClient, PutRolePolicyCommand } from "@aws-sdk/client-iam";
 import fs from "fs";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ Initialize AWS Lambda & IAM Clients with Credentials
+// ✅ Initialize AWS Lambda Client
 const lambdaClient = new LambdaClient({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-});
-
-const iamClient = new IAMClient({
     region: process.env.AWS_REGION,
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -38,40 +29,21 @@ const createLambda = async (chatId) => {
     const functionName = `lambda-${Date.now().toString(36)}`;
 
     try {
+        console.log(`🚀 Creating Lambda function: ${functionName}...`);
+        
+        // Read the zip file containing the Lambda function code
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
-        console.log(`🚀 Creating Lambda function: ${functionName}...`);
-
-        if (!process.env.AWS_ROLE_ARN) {
-            console.error("❌ ERROR: AWS_ROLE_ARN is missing. Set it in .env and restart the bot.");
-            bot.sendMessage(chatId, "❌ ERROR: AWS_ROLE_ARN is missing. Please set it in the .env file.");
-            return;
-        }
-        
-        // Check if the Lambda function ZIP file exists
-        if (!fs.existsSync("./index.mjs.zip")) {
-            console.error("❌ ERROR: Lambda ZIP file not found.");
-            bot.sendMessage(chatId, "❌ ERROR: Lambda ZIP file not found. Ensure 'index.mjs.zip' exists in the bot directory.");
-            return;
-        }
-        console.log("🚀 Lambda Function Parameters:", {
-            FunctionName: functionName,
-            Runtime: "nodejs18.x",
-            Role: process.env.AWS_ROLE_ARN,
-            Handler: "index.handler",
-            Timeout: 10,
-            MemorySize: 128,
-        });
-        
+        // Step 1: Create Lambda Function
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
             Runtime: "nodejs18.x",
-            Role: process.env.AWS_ROLE_ARN.trim(),  // ✅ Trim whitespace to prevent errors
+            Role: process.env.AWS_ROLE_ARN.trim(),
             Handler: "index.handler",
-            Code: { ZipFile: fs.readFileSync("./index.mjs.zip") },  // ✅ Ensure it loads properly
-            Timeout: 10,  // ✅ Ensure a timeout is set (AWS requires this)
+            Code: { ZipFile: zipFile },
+            Timeout: 10,
             MemorySize: 128
-        });            
+        });
 
         await lambdaClient.send(createFunction);
         bot.sendMessage(chatId, `✅ Lambda function '${functionName}' created successfully.`);
@@ -85,40 +57,16 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
+        // Step 3: Add Public Access Permission
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
             StatementId: "FunctionURLPublicAccess",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            FunctionUrlAuthType: "NONE"  // ✅ FIXED: This is the correct parameter
+            FunctionUrlAuthType: "NONE"
         });
-        
+
         await lambdaClient.send(addPermission);
-
-        // ✅ Step 4: Add an Inline Policy to IAM Role to Ensure Access
-        const lambdaResourceArn = `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:${functionName}`;
-
-        const policyDocument = JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [
-                {
-                    Effect: "Allow",
-                    Action: "lambda:InvokeFunctionUrl",
-                    Resource: lambdaResourceArn,
-                    Principal: "*"
-                }
-            ]
-        });
-
-        const putRolePolicy = new PutRolePolicyCommand({
-            RoleName: process.env.AWS_ROLE_NAME,
-            PolicyName: `${functionName}-PublicAccessPolicy`,
-            PolicyDocument: policyDocument
-        });
-
-        await iamClient.send(putRolePolicy);
-
-        // ✅ Send the Function URL back to the Telegram chat
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
         return functionUrl;
     } catch (error) {
