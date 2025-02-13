@@ -5,13 +5,22 @@ import {
     CreateFunctionUrlConfigCommand,
     AddPermissionCommand
 } from "@aws-sdk/client-lambda";
+import { IAMClient, PutRolePolicyCommand } from "@aws-sdk/client-iam";
 import fs from "fs";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ Initialize AWS Lambda Client with credentials
+// ✅ Initialize AWS Lambda & IAM Clients with Credentials
 const lambdaClient = new LambdaClient({
+    region: process.env.AWS_REGION,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
+const iamClient = new IAMClient({
     region: process.env.AWS_REGION,
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -54,16 +63,43 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add Public Access Permission via Resource-Based Policy (FIXED ✅)
+        // Step 3: Add a Resource-Based Policy for Public Access (FIXED ✅)
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
-            StatementId: "PublicAccess",
+            StatementId: "AllowPublicInvoke",
             Action: "lambda:InvokeFunctionUrl",
             Principal: "*",
-            FunctionUrlAuthType: "NONE"
+            Condition: {
+                StringEquals: {
+                    "lambda:FunctionUrlAuthType": "NONE"
+                }
+            }
         });
 
         await lambdaClient.send(addPermission);
+
+        // ✅ Step 4: Add an Inline Policy to IAM Role to Ensure Access
+        const lambdaResourceArn = `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:${functionName}`;
+
+        const policyDocument = JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Effect: "Allow",
+                    Action: "lambda:InvokeFunctionUrl",
+                    Resource: lambdaResourceArn,
+                    Principal: "*"
+                }
+            ]
+        });
+
+        const putRolePolicy = new PutRolePolicyCommand({
+            RoleName: process.env.AWS_ROLE_NAME,
+            PolicyName: `${functionName}-PublicAccessPolicy`,
+            PolicyDocument: policyDocument
+        });
+
+        await iamClient.send(putRolePolicy);
 
         // ✅ Send the Function URL back to the Telegram chat
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
