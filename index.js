@@ -19,41 +19,29 @@ const lambdaClient = new LambdaClient({
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
     }
 });
+const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 
-const dynamoClient = new DynamoDBClient({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-});
-
-// ✅ Initialize Telegram Bot
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-
-console.log("🤖 Telegram bot is running...");
-
-// ✅ Function to store the function URL in DynamoDB
+// ✅ Function to store function URL in DynamoDB
 const storeFunctionUrl = async (functionUrl) => {
     try {
-        // Extract subdomain from the function URL
+        // Extract subdomain from function URL
         const urlParts = new URL(functionUrl).hostname.split(".");
         const subdomain = urlParts[0];
 
         console.log(`📝 Storing subdomain '${subdomain}' in DynamoDB...`);
 
-        // ✅ Ensure correct data types
+        // ✅ Ensure correct data types for DynamoDB
         const putParams = {
             TableName: "Config",
             Item: {
-                subdomain: { S: subdomain },
-                config: { N: "0" } // ✅ Store config as a Number (N)
+                subdomain: { S: subdomain },   // ✅ Store subdomain as String (S)
+                config: { N: "0" }            // ✅ Store config as Number (N)
             }
         };
 
-        // Debug: Log full request before sending
         console.log("🔹 DynamoDB PutItem Params:", JSON.stringify(putParams, null, 2));
 
+        // ✅ Attempt to store the function URL in DynamoDB
         await dynamoClient.send(new PutItemCommand(putParams));
 
         console.log(`✅ Subdomain '${subdomain}' stored in DynamoDB successfully!`);
@@ -64,13 +52,18 @@ const storeFunctionUrl = async (functionUrl) => {
     }
 };
 
+// ✅ Initialize Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+console.log("🤖 Telegram bot is running...");
+
 // ✅ Function to create a new Lambda with a publicly accessible Function URL
 const createLambda = async (chatId) => {
     const functionName = `lambda-${Date.now().toString(36)}`;
 
     try {
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
-
+        
         // Read the zip file containing the Lambda function code
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
@@ -96,13 +89,23 @@ const createLambda = async (chatId) => {
 
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
+
+        // Step 3: Add Public Access Permission
+        const addPermission = new AddPermissionCommand({
+            FunctionName: functionName,
+            StatementId: "FunctionURLPublicAccess",
+            Action: "lambda:InvokeFunctionUrl",
+            Principal: "*",
+            FunctionUrlAuthType: "NONE"
+        });
+
+        await lambdaClient.send(addPermission);
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
 
-        // ✅ Store function URL in DynamoDB
-        const success = await storeFunctionUrl(functionUrl);
-
-        if (!success) {
-            bot.sendMessage(chatId, "⚠️ Warning: Could not store function URL in DynamoDB.");
+        // ✅ Step 4: Store function URL in DynamoDB
+        const stored = await storeFunctionUrl(functionUrl);
+        if (!stored) {
+            bot.sendMessage(chatId, `⚠️ Warning: Could not store function URL in DynamoDB.`);
         }
 
         return functionUrl;
