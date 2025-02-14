@@ -14,20 +14,15 @@ export const handler = async (event) => {
     const functionConfig = await lambdaClient.send(
       new GetFunctionUrlConfigCommand({ FunctionName: functionArn })
     );
-    
+
     const functionUrl = functionConfig.FunctionUrl;
     console.log("🔹 Function URL:", functionUrl);
 
-    // ✅ Extract subdomain from function URL
-    const urlParts = new URL(functionUrl).hostname.split(".");
-    const subdomain = urlParts[0];
-    console.log("🔹 Extracted Subdomain:", subdomain);
-
-    // ✅ Check if subdomain exists in DynamoDB
+    // ✅ Query DynamoDB using functionUrl instead of subdomain
     const getParams = {
       TableName: "Config",
       Key: {
-        subdomain: { S: subdomain }
+        functionUrl: { S: functionUrl }
       }
     };
 
@@ -39,19 +34,19 @@ export const handler = async (event) => {
     console.log("🔹 DynamoDB Response:", JSON.stringify(data, null, 2));
 
     if (!data.Item) {
-      console.log(`❌ Subdomain '${subdomain}' not found in DynamoDB.`);
+      console.log(`❌ Function URL '${functionUrl}' not found in DynamoDB.`);
       return {
         statusCode: 404,
         body: JSON.stringify({ error: "Could not retrieve configuration" }),
       };
     }
 
-    // ✅ If the subdomain exists, return its stored config value
-    const configValue = data.Item.config?.N || "0"; // ✅ Ensure it's read correctly as a number
+    // ✅ If functionUrl exists, return the stored config value
+    const configValue = data.Item.config?.N || "0"; // Ensure it's retrieved as a number
 
     return {
       statusCode: 200,
-      body: JSON.stringify(Number(configValue)) // ✅ Return only the config value
+      body: JSON.stringify(Number(configValue)) // Return only the config value
     };
   } catch (error) {
     console.error("❌ Error retrieving configuration:", error);
