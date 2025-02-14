@@ -94,7 +94,8 @@ const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
             UpdateExpression: "SET config = :newValue",
             ExpressionAttributeValues: {
                 ":newValue": { N: newValue.toString() }
-            }
+            },
+            ReturnValues: "UPDATED_NEW"
         };
 
         await dynamoClient.send(new UpdateItemCommand(updateParams));
@@ -190,14 +191,6 @@ bot.onText(/\/updateconfig (.+) (.+)/, async (msg, match) => {
     }
 
     await updateConfig(chatId, subdomainOrUrl, newValue);
-});
-
-// ✅ General Message Handler (Confirms Bot is Running)
-bot.on("message", (msg) => {
-    const chatId = msg.chat.id;
-    if (!msg.text.startsWith("/")) {
-        bot.sendMessage(chatId, "✅ I'm alive! Use `/newlambda` to create a Lambda or `/updateconfig <subdomain/url> <value>` to update config.");
-    }
 });
 
 // ✅ Start Polling Error Handling
