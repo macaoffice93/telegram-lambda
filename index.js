@@ -42,7 +42,7 @@ const storeFunctionUrl = async (functionUrl) => {
 
         console.log(`📝 Storing subdomain '${subdomain}' in DynamoDB...`);
 
-        // ✅ Ensure the data types match the DynamoDB schema
+        // ✅ Ensure correct data types
         const putParams = {
             TableName: "Config",
             Item: {
@@ -51,12 +51,15 @@ const storeFunctionUrl = async (functionUrl) => {
             }
         };
 
+        // Debug: Log full request before sending
+        console.log("🔹 DynamoDB PutItem Params:", JSON.stringify(putParams, null, 2));
+
         await dynamoClient.send(new PutItemCommand(putParams));
 
         console.log(`✅ Subdomain '${subdomain}' stored in DynamoDB successfully!`);
         return true;
     } catch (error) {
-        console.error("❌ Error storing function URL in DynamoDB:", error);
+        console.error("❌ DynamoDB Error:", error);
         return false;
     }
 };
