@@ -5,7 +5,7 @@ import {
     CreateFunctionUrlConfigCommand,
     AddPermissionCommand
 } from "@aws-sdk/client-lambda";
-import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, PutItemCommand, UpdateItemCommand, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import fs from "fs";
 import dotenv from "dotenv";
 
@@ -35,6 +35,7 @@ const storeFunctionUrl = async (functionUrl) => {
             TableName: "Config",
             Item: {
                 subdomain: { S: subdomain },   // ✅ Store subdomain as String (S)
+                functionUrl: { S: functionUrl }, // ✅ Store function URL
                 config: { N: "0" }            // ✅ Store config as Number (N)
             }
         };
@@ -49,6 +50,59 @@ const storeFunctionUrl = async (functionUrl) => {
     } catch (error) {
         console.error("❌ DynamoDB Error:", error);
         return false;
+    }
+};
+
+// ✅ Function to update configuration in DynamoDB
+const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
+    try {
+        // Extract subdomain if input is a full URL
+        let subdomain;
+        if (inputSubdomainOrUrl.includes(".")) {
+            const urlParts = new URL(inputSubdomainOrUrl).hostname.split(".");
+            subdomain = urlParts[0];
+        } else {
+            subdomain = inputSubdomainOrUrl;
+        }
+
+        console.log(`🔄 Updating config for subdomain: ${subdomain} with value: ${newValue}`);
+
+        // ✅ Ensure the subdomain exists before updating
+        const getParams = {
+            TableName: "Config",
+            Key: {
+                subdomain: { S: subdomain }
+            }
+        };
+
+        const getResponse = await dynamoClient.send(new GetItemCommand(getParams));
+
+        if (!getResponse.Item) {
+            bot.sendMessage(chatId, `❌ Error: No function found for subdomain '${subdomain}'.`);
+            return;
+        }
+
+        // ✅ Extract function URL for response
+        const functionUrl = getResponse.Item.functionUrl?.S || "Unknown";
+
+        // ✅ Update the configuration value
+        const updateParams = {
+            TableName: "Config",
+            Key: {
+                subdomain: { S: subdomain }
+            },
+            UpdateExpression: "SET config = :newValue",
+            ExpressionAttributeValues: {
+                ":newValue": { N: newValue.toString() }
+            }
+        };
+
+        await dynamoClient.send(new UpdateItemCommand(updateParams));
+
+        bot.sendMessage(chatId, `✅ Config updated for '${subdomain}'. New value: ${newValue}\n🌍 Function URL: ${functionUrl}`);
+    } catch (error) {
+        console.error("❌ Error updating configuration:", error);
+        bot.sendMessage(chatId, `❌ Error updating configuration. Check logs.`);
     }
 };
 
@@ -124,11 +178,25 @@ bot.onText(/\/newlambda/, async (msg) => {
     await createLambda(chatId);
 });
 
+// ✅ Handle Telegram Command: `/updateconfig <subdomain/url> <value>`
+bot.onText(/\/updateconfig (.+) (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const subdomainOrUrl = match[1].trim();
+    const newValue = match[2].trim();
+
+    if (!subdomainOrUrl || isNaN(newValue)) {
+        bot.sendMessage(chatId, "❌ Invalid format. Use `/updateconfig <subdomain/url> <value>`");
+        return;
+    }
+
+    await updateConfig(chatId, subdomainOrUrl, newValue);
+});
+
 // ✅ General Message Handler (Confirms Bot is Running)
 bot.on("message", (msg) => {
     const chatId = msg.chat.id;
-    if (msg.text !== "/newlambda") {
-        bot.sendMessage(chatId, "✅ I'm alive! Send `/newlambda` to create a Lambda function.");
+    if (!msg.text.startsWith("/")) {
+        bot.sendMessage(chatId, "✅ I'm alive! Use `/newlambda` to create a Lambda or `/updateconfig <subdomain/url> <value>` to update config.");
     }
 });
 
