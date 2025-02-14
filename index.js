@@ -1,6 +1,24 @@
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import {
+    LambdaClient,
+    CreateFunctionCommand,
+    CreateFunctionUrlConfigCommand,
+    AddPermissionCommand
+} from "@aws-sdk/client-lambda";
+import fs from "fs";
+import dotenv from "dotenv";
 
-// ✅ Initialize AWS DynamoDB Client
+dotenv.config();
+
+// ✅ Initialize AWS Clients
+const lambdaClient = new LambdaClient({
+    region: process.env.AWS_REGION,
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
 const dynamoClient = new DynamoDBClient({
     region: process.env.AWS_REGION,
     credentials: {
@@ -9,15 +27,15 @@ const dynamoClient = new DynamoDBClient({
     }
 });
 
-// ✅ Function to store the Lambda URL in DynamoDB
+// ✅ Store Lambda URL in DynamoDB
 const storeFunctionUrl = async (functionUrl) => {
     const subdomain = new URL(functionUrl).hostname.split(".")[0];
 
     const params = {
         TableName: "Config",
         Item: {
-            subdomain: { S: subdomain },   // Subdomain stored as a String
-            config: { N: "0" }            // Config stored as a Number (N)
+            subdomain: { S: subdomain },
+            config: { N: "0" } // Ensuring it's a number
         }
     };
 
@@ -29,7 +47,7 @@ const storeFunctionUrl = async (functionUrl) => {
     }
 };
 
-// Modify your Lambda creation function to store the function URL
+// ✅ Create Lambda Function
 const createLambda = async (chatId) => {
     const functionName = `lambda-${Date.now().toString(36)}`;
 
@@ -68,3 +86,25 @@ const createLambda = async (chatId) => {
         bot.sendMessage(chatId, `❌ Error creating Lambda function. Check logs. Error: ${error.message}`);
     }
 };
+
+// ✅ Telegram Bot Setup
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+bot.onText(/\/newlambda/, async (msg) => {
+    const chatId = msg.chat.id;
+    console.log(`📥 Received /newlambda command from ${chatId}`);
+
+    bot.sendMessage(chatId, "⏳ Creating a unique Lambda function...");
+    await createLambda(chatId);
+});
+
+bot.on("message", (msg) => {
+    const chatId = msg.chat.id;
+    if (msg.text !== "/newlambda") {
+        bot.sendMessage(chatId, "✅ I'm alive! Send `/newlambda` to create a Lambda function.");
+    }
+});
+
+bot.on("polling_error", (error) => {
+    console.error("🚨 Polling Error:", error);
+});
