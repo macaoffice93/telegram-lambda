@@ -5,12 +5,13 @@ import {
     CreateFunctionUrlConfigCommand,
     AddPermissionCommand
 } from "@aws-sdk/client-lambda";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import fs from "fs";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ Initialize AWS Lambda Client
+// ✅ Initialize AWS Clients
 const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
     credentials: {
@@ -18,6 +19,8 @@ const lambdaClient = new LambdaClient({
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
     }
 });
+
+const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 
 // ✅ Initialize Telegram Bot
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -30,7 +33,7 @@ const createLambda = async (chatId) => {
 
     try {
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
-        
+
         // Read the zip file containing the Lambda function code
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
@@ -68,6 +71,19 @@ const createLambda = async (chatId) => {
 
         await lambdaClient.send(addPermission);
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
+
+        // ✅ Step 4: Store Function URL in DynamoDB with Default Config `0`
+        const putCommand = new PutItemCommand({
+            TableName: "Config",
+            Item: {
+                subdomain: { S: functionUrl }, // Function URL as key
+                config: { N: "0" } // Default config value
+            }
+        });
+
+        await dynamoClient.send(putCommand);
+        bot.sendMessage(chatId, `✅ Stored function in DynamoDB with default config.`);
+
         return functionUrl;
     } catch (error) {
         console.error("❌ Error creating Lambda function:", error);
