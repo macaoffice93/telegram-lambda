@@ -1,10 +1,11 @@
-import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import TelegramBot from "node-telegram-bot-api";
 import {
     LambdaClient,
     CreateFunctionCommand,
     CreateFunctionUrlConfigCommand,
     AddPermissionCommand
 } from "@aws-sdk/client-lambda";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import fs from "fs";
 import dotenv from "dotenv";
 
@@ -27,6 +28,11 @@ const dynamoClient = new DynamoDBClient({
     }
 });
 
+// ✅ Initialize Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+console.log("🤖 Telegram bot is running...");
+
 // ✅ Store Lambda URL in DynamoDB
 const storeFunctionUrl = async (functionUrl) => {
     const subdomain = new URL(functionUrl).hostname.split(".")[0];
@@ -35,7 +41,7 @@ const storeFunctionUrl = async (functionUrl) => {
         TableName: "Config",
         Item: {
             subdomain: { S: subdomain },
-            config: { N: "0" } // Ensuring it's a number
+            config: { N: "0" } // ✅ Ensuring the config value is stored as a number
         }
     };
 
@@ -76,7 +82,7 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Store Function URL in DynamoDB
+        // ✅ Store Function URL in DynamoDB
         await storeFunctionUrl(functionUrl);
 
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
@@ -88,8 +94,6 @@ const createLambda = async (chatId) => {
 };
 
 // ✅ Telegram Bot Setup
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-
 bot.onText(/\/newlambda/, async (msg) => {
     const chatId = msg.chat.id;
     console.log(`📥 Received /newlambda command from ${chatId}`);
