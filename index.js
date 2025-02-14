@@ -61,6 +61,7 @@ const createLambda = async (chatId) => {
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
+        // Step 1: Create the Lambda Function
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
             Runtime: "nodejs18.x",
@@ -74,6 +75,7 @@ const createLambda = async (chatId) => {
         await lambdaClient.send(createFunction);
         bot.sendMessage(chatId, `✅ Lambda function '${functionName}' created successfully.`);
 
+        // Step 2: Enable Function URL
         const createFunctionUrl = new CreateFunctionUrlConfigCommand({
             FunctionName: functionName,
             AuthType: "NONE",
@@ -81,6 +83,17 @@ const createLambda = async (chatId) => {
 
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
+
+        // Step 3: Add Public Access Permission (FIX)
+        const addPermission = new AddPermissionCommand({
+            FunctionName: functionName,
+            StatementId: "AllowPublicAccess",
+            Action: "lambda:InvokeFunctionUrl",
+            Principal: "*",
+            FunctionUrlAuthType: "NONE"
+        });
+
+        await lambdaClient.send(addPermission);
 
         // ✅ Store Function URL in DynamoDB
         await storeFunctionUrl(functionUrl);
