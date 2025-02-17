@@ -11,8 +11,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ Allowed Conversation ID (Set in .env)
-const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_AUTHORIZED_CHAT_ID;
+// ✅ Allowed Conversation ID (Set in .env, converted to number)
+const AUTHORIZED_CHAT_ID = Number(process.env.TELEGRAM_AUTHORIZED_CHAT_ID);
 
 if (!AUTHORIZED_CHAT_ID) {
     console.error("❌ ERROR: TELEGRAM_AUTHORIZED_CHAT_ID is not set in environment variables.");
@@ -28,6 +28,15 @@ const lambdaClient = new LambdaClient({
     }
 });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
+
+// ✅ Middleware to check if the message is from an authorized chat
+const isAuthorized = (chatId) => {
+    if (chatId !== AUTHORIZED_CHAT_ID) {
+        console.log(`🚫 Unauthorized attempt from chat ID: ${chatId}`);
+        return false;
+    }
+    return true;
+};
 
 // ✅ Function to store function URL in DynamoDB
 const storeFunctionUrl = async (functionUrl) => {
@@ -55,68 +64,10 @@ const storeFunctionUrl = async (functionUrl) => {
     }
 };
 
-// ✅ Function to update configuration in DynamoDB
-const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
-    try {
-        let subdomain;
-        if (inputSubdomainOrUrl.includes(".")) {
-            subdomain = new URL(inputSubdomainOrUrl).hostname.split(".")[0];
-        } else {
-            subdomain = inputSubdomainOrUrl;
-        }
-
-        console.log(`🔄 Updating config for subdomain: ${subdomain} with value: ${newValue}`);
-
-        const getParams = {
-            TableName: "Config",
-            Key: {
-                subdomain: { S: subdomain }
-            }
-        };
-
-        const getResponse = await dynamoClient.send(new GetItemCommand(getParams));
-
-        if (!getResponse.Item) {
-            bot.sendMessage(chatId, `❌ Error: No function found for subdomain '${subdomain}'.`);
-            return;
-        }
-
-        const functionUrl = getResponse.Item.functionUrl?.S || "Unknown";
-
-        const updateParams = {
-            TableName: "Config",
-            Key: {
-                subdomain: { S: subdomain }
-            },
-            UpdateExpression: "SET config = :newValue",
-            ExpressionAttributeValues: {
-                ":newValue": { N: newValue.toString() }
-            },
-            ReturnValues: "UPDATED_NEW"
-        };
-
-        await dynamoClient.send(new UpdateItemCommand(updateParams));
-
-        bot.sendMessage(chatId, `✅ Config updated for '${subdomain}'. New value: ${newValue}\n🌍 Function URL: ${functionUrl}`);
-    } catch (error) {
-        console.error("❌ Error updating configuration:", error);
-        bot.sendMessage(chatId, `❌ Error updating configuration. Check logs.`);
-    }
-};
-
-// ✅ Initialize Telegram Bot
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-
-console.log("🤖 Telegram bot is running...");
-
-// ✅ Middleware to check if the message is from an authorized chat
-const isAuthorized = (chatId) => chatId.toString() === AUTHORIZED_CHAT_ID;
-
-// ✅ Function to create a new Lambda with a publicly accessible Function URL
+// ✅ Function to create a new Lambda function
 const createLambda = async (chatId) => {
     if (!isAuthorized(chatId)) {
         bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
-        console.log(`🚫 Unauthorized attempt to use /newlambda from chat ID: ${chatId}`);
         return;
     }
 
@@ -171,12 +122,70 @@ const createLambda = async (chatId) => {
     }
 };
 
+// ✅ Function to update configuration in DynamoDB
+const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
+    if (!isAuthorized(chatId)) {
+        bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
+        return;
+    }
+
+    try {
+        let subdomain;
+        if (inputSubdomainOrUrl.includes(".")) {
+            subdomain = new URL(inputSubdomainOrUrl).hostname.split(".")[0];
+        } else {
+            subdomain = inputSubdomainOrUrl;
+        }
+
+        console.log(`🔄 Updating config for subdomain: ${subdomain} with value: ${newValue}`);
+
+        const getParams = {
+            TableName: "Config",
+            Key: {
+                subdomain: { S: subdomain }
+            }
+        };
+
+        const getResponse = await dynamoClient.send(new GetItemCommand(getParams));
+
+        if (!getResponse.Item) {
+            bot.sendMessage(chatId, `❌ Error: No function found for subdomain '${subdomain}'.`);
+            return;
+        }
+
+        const functionUrl = getResponse.Item.functionUrl?.S || "Unknown";
+
+        const updateParams = {
+            TableName: "Config",
+            Key: {
+                subdomain: { S: subdomain }
+            },
+            UpdateExpression: "SET config = :newValue",
+            ExpressionAttributeValues: {
+                ":newValue": { N: newValue.toString() }
+            },
+            ReturnValues: "UPDATED_NEW"
+        };
+
+        await dynamoClient.send(new UpdateItemCommand(updateParams));
+
+        bot.sendMessage(chatId, `✅ Config updated for '${subdomain}'. New value: ${newValue}\n🌍 Function URL: ${functionUrl}`);
+    } catch (error) {
+        console.error("❌ Error updating configuration:", error);
+        bot.sendMessage(chatId, `❌ Error updating configuration. Check logs.`);
+    }
+};
+
+// ✅ Initialize Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+console.log("🤖 Telegram bot is running...");
+
 // ✅ Handle Telegram Command: `/newlambda`
 bot.onText(/\/newlambda/, async (msg) => {
     const chatId = msg.chat.id;
     if (!isAuthorized(chatId)) {
         bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
-        console.log(`🚫 Unauthorized attempt to use /newlambda from chat ID: ${chatId}`);
         return;
     }
     console.log(`📥 Received /newlambda command from ${chatId}`);
@@ -189,7 +198,6 @@ bot.onText(/\/updateconfig (.+) (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     if (!isAuthorized(chatId)) {
         bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
-        console.log(`🚫 Unauthorized attempt to use /updateconfig from chat ID: ${chatId}`);
         return;
     }
     const subdomainOrUrl = match[1].trim();
