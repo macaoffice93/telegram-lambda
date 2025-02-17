@@ -11,6 +11,14 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// ✅ Allowed Conversation ID (Set in .env)
+const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_AUTHORIZED_CHAT_ID;
+
+if (!AUTHORIZED_CHAT_ID) {
+    console.error("❌ ERROR: TELEGRAM_AUTHORIZED_CHAT_ID is not set in environment variables.");
+    process.exit(1);
+}
+
 // ✅ Initialize AWS Clients
 const lambdaClient = new LambdaClient({
     region: process.env.AWS_REGION,
@@ -24,28 +32,22 @@ const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 // ✅ Function to store function URL in DynamoDB
 const storeFunctionUrl = async (functionUrl) => {
     try {
-        // Extract subdomain from function URL
         const urlParts = new URL(functionUrl).hostname.split(".");
         const subdomain = urlParts[0];
 
         console.log(`📝 Storing subdomain '${subdomain}' in DynamoDB...`);
 
-        // ✅ Ensure correct data types for DynamoDB
         const putParams = {
             TableName: "Config",
             Item: {
-                subdomain: { S: subdomain },   // ✅ Store subdomain as String (S)
-                functionUrl: { S: functionUrl }, // ✅ Store function URL
-                config: { N: "0" }            // ✅ Store config as Number (N)
+                subdomain: { S: subdomain },
+                functionUrl: { S: functionUrl },
+                config: { N: "0" }
             }
         };
 
-        console.log("🔹 DynamoDB PutItem Params:", JSON.stringify(putParams, null, 2));
-
-        // ✅ Attempt to store the function URL in DynamoDB
         await dynamoClient.send(new PutItemCommand(putParams));
-
-        console.log(`✅ Subdomain '${subdomain}' stored in DynamoDB successfully!`);
+        console.log(`✅ Subdomain '${subdomain}' stored successfully!`);
         return true;
     } catch (error) {
         console.error("❌ DynamoDB Error:", error);
@@ -56,18 +58,15 @@ const storeFunctionUrl = async (functionUrl) => {
 // ✅ Function to update configuration in DynamoDB
 const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
     try {
-        // Extract subdomain if input is a full URL
         let subdomain;
         if (inputSubdomainOrUrl.includes(".")) {
-            const urlParts = new URL(inputSubdomainOrUrl).hostname.split(".");
-            subdomain = urlParts[0];
+            subdomain = new URL(inputSubdomainOrUrl).hostname.split(".")[0];
         } else {
             subdomain = inputSubdomainOrUrl;
         }
 
         console.log(`🔄 Updating config for subdomain: ${subdomain} with value: ${newValue}`);
 
-        // ✅ Ensure the subdomain exists before updating
         const getParams = {
             TableName: "Config",
             Key: {
@@ -82,10 +81,8 @@ const updateConfig = async (chatId, inputSubdomainOrUrl, newValue) => {
             return;
         }
 
-        // ✅ Extract function URL for response
         const functionUrl = getResponse.Item.functionUrl?.S || "Unknown";
 
-        // ✅ Update the configuration value
         const updateParams = {
             TableName: "Config",
             Key: {
@@ -112,17 +109,24 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 console.log("🤖 Telegram bot is running...");
 
+// ✅ Middleware to check if the message is from an authorized chat
+const isAuthorized = (chatId) => chatId.toString() === AUTHORIZED_CHAT_ID;
+
 // ✅ Function to create a new Lambda with a publicly accessible Function URL
 const createLambda = async (chatId) => {
+    if (!isAuthorized(chatId)) {
+        bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
+        console.log(`🚫 Unauthorized attempt to use /newlambda from chat ID: ${chatId}`);
+        return;
+    }
+
     const functionName = `lambda-${Date.now().toString(36)}`;
 
     try {
         console.log(`🚀 Creating Lambda function: ${functionName}...`);
         
-        // Read the zip file containing the Lambda function code
         const zipFile = fs.readFileSync("./index.mjs.zip");
 
-        // Step 1: Create Lambda Function
         const createFunction = new CreateFunctionCommand({
             FunctionName: functionName,
             Runtime: "nodejs18.x",
@@ -136,7 +140,6 @@ const createLambda = async (chatId) => {
         await lambdaClient.send(createFunction);
         bot.sendMessage(chatId, `✅ Lambda function '${functionName}' created successfully.`);
 
-        // Step 2: Enable Function URL
         const createFunctionUrl = new CreateFunctionUrlConfigCommand({
             FunctionName: functionName,
             AuthType: "NONE",
@@ -145,7 +148,6 @@ const createLambda = async (chatId) => {
         const response = await lambdaClient.send(createFunctionUrl);
         const functionUrl = response.FunctionUrl;
 
-        // Step 3: Add Public Access Permission
         const addPermission = new AddPermissionCommand({
             FunctionName: functionName,
             StatementId: "FunctionURLPublicAccess",
@@ -157,7 +159,6 @@ const createLambda = async (chatId) => {
         await lambdaClient.send(addPermission);
         bot.sendMessage(chatId, `🚀 Lambda Function URL: ${functionUrl} (Publicly Accessible)`);
 
-        // ✅ Step 4: Store function URL in DynamoDB
         const stored = await storeFunctionUrl(functionUrl);
         if (!stored) {
             bot.sendMessage(chatId, `⚠️ Warning: Could not store function URL in DynamoDB.`);
@@ -173,8 +174,12 @@ const createLambda = async (chatId) => {
 // ✅ Handle Telegram Command: `/newlambda`
 bot.onText(/\/newlambda/, async (msg) => {
     const chatId = msg.chat.id;
+    if (!isAuthorized(chatId)) {
+        bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
+        console.log(`🚫 Unauthorized attempt to use /newlambda from chat ID: ${chatId}`);
+        return;
+    }
     console.log(`📥 Received /newlambda command from ${chatId}`);
-
     bot.sendMessage(chatId, "⏳ Creating a unique Lambda function...");
     await createLambda(chatId);
 });
@@ -182,6 +187,11 @@ bot.onText(/\/newlambda/, async (msg) => {
 // ✅ Handle Telegram Command: `/updateconfig <subdomain/url> <value>`
 bot.onText(/\/updateconfig (.+) (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
+    if (!isAuthorized(chatId)) {
+        bot.sendMessage(chatId, "🚫 You are not authorized to use this bot.");
+        console.log(`🚫 Unauthorized attempt to use /updateconfig from chat ID: ${chatId}`);
+        return;
+    }
     const subdomainOrUrl = match[1].trim();
     const newValue = match[2].trim();
 
